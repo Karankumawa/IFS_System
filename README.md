@@ -1,47 +1,78 @@
-# Indian Festival Recognition
+# 🪔 Indian Festival Recognition System
 
-One desktop application recognizes nine Indian festivals from a live camera or
-an image file and plays a local song for the detected festival.
+A real-time Computer Vision and AI Web Application that detects Indian festivals (like Diwali, Holi, Pongal) through a live webcam feed and automatically plays corresponding traditional songs or Aartis in a responsive web dashboard.
 
-## Run the app
+## ✨ Features
+- **Real-Time Detection**: Captures live webcam feed and runs inference locally using OpenCV and TensorFlow.
+- **Advanced Deep Learning**: Uses a custom-trained `MobileNetV2` model with Transfer Learning and aggressive Data Augmentation for robust accuracy.
+- **Responsive Web Dashboard**: A beautifully designed UI built with Flask and Tailwind CSS that displays live video streams and real-time confidence metrics.
+- **Smart Audio Playback**: Automatically maps detected festivals to MP3 tracks in the `static/audio/` folder based on file name matching. 
+- **Non-blocking Architecture**: Inference runs in separate threads via Flask MJPEG streaming so the browser UI remains buttery smooth.
 
-The current `venv` does not yet contain the required packages. Run these
-commands in PowerShell from this project folder:
-
-```powershell
-.\venv\Scripts\python.exe -m pip install --upgrade pip
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
-.\venv\Scripts\python.exe test_load.py
-.\venv\Scripts\python.exe app.py
+## 📁 Project Structure
+```
+IFS_System/
+├── app.py                      # Main Flask Web Server & OpenCV streaming logic
+├── train_model.py              # Robust Transfer Learning script (Keras 3)
+├── festival_model.keras        # Pre-trained MobileNetV2 model
+├── festival_model.labels.json  # Auto-generated label mappings
+├── templates/
+│   └── index.html              # Tailwind CSS Responsive Dashboard
+├── static/
+│   └── audio/                  # Drop your MP3 files here (e.g., Happy_Diwali.mp3)
+└── requirements.txt            # Python dependencies
 ```
 
-`test_load.py` must print `SUCCESS` before opening the app.
+## 🚀 Installation & Setup
 
-## Use the desktop app
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/Karankumawa/IFS_System.git
+   cd IFS_System
+   ```
 
-1. Click **Start Camera** for live preview and live festival detection.
-2. Click **Capture Current Frame** to analyze the current camera image once.
-3. Or click **Choose Image** to analyze an image from your computer.
-4. Select a festival in the audio panel and click **Choose Song File** to add
-   a local `.mp3`, `.wav`, or `.ogg` track for it.
+2. **Create a virtual environment (Recommended):**
+   ```bash
+   python -m venv venv
+   # On Windows:
+   .\venv\Scripts\activate
+   # On Mac/Linux:
+   source venv/bin/activate
+   ```
 
-Live detection waits for three consecutive matching predictions before changing
-the detected festival or song. Click **Stop Song** at any time.
+3. **Install Dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-The project includes `Happy_Diwali.mp3`, so DIWALI can play immediately. Add
-your own local tracks for the other festivals using the app. Your selections
-are saved in `audio_mapping.json` on this computer and are not committed to Git.
+## 🎵 How to configure Audio
+The system uses **Auto-Mapping**. 
+1. Place your MP3 files inside the `static/audio/` folder.
+2. Make sure the festival name is somewhere in the file name. 
+   - *Example: For the `DIWALI` class, name your file `Happy_Diwali.mp3` or `diwali_song.mp3`.*
+3. The backend will automatically detect the name and map it to the UI.
 
-## Project files
+## 🏃‍♂️ Usage
 
-- `app.py` — the single desktop user interface.
-- `festival_model.keras` and `festival_model.labels.json` — the supplied model
-  and its required label order.
-- `festival_config.py` — shared model, dataset, and audio settings.
-- `train_model.py` — optional model retraining script.
-- `test_load.py` — model smoke test.
-- `dataset/festivals_classification` — classifier data.
+### 1. (Optional) Retrain the Model
+If you want to train the model on your own custom dataset, place your folders inside `dataset/festivals_classification/train` and run:
+```bash
+python train_model.py
+```
+*This will apply data augmentation, train the MobileNetV2 model, save it as `festival_model.keras`, and export the `labels.json`.*
 
-The training data is imbalanced and its folder named `test` is currently used
-for validation. Create a separate unseen test split before reporting final
-accuracy from a retrained model.
+### 2. Start the Dashboard
+Run the Flask server:
+```bash
+python app.py
+```
+Open your web browser and go to:
+**http://127.0.0.1:5000**
+
+> **Note**: Modern browsers block auto-playing audio for security reasons. After opening the dashboard, simply click anywhere on the page once to allow the audio player to start reacting to live detections.
+
+## 🛠 Technologies Used
+- **Backend**: Python, Flask
+- **Machine Learning**: TensorFlow, Keras (MobileNetV2)
+- **Computer Vision**: OpenCV
+- **Frontend**: HTML5, Tailwind CSS, Vanilla JavaScript
