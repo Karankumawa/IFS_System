@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Festival Recognition Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 shadow-md">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-indigo-400"><i class="fas fa-om mr-2"></i> Live Festival Dashboard</h1>
+            <span class="text-sm text-gray-400">TensorFlow + Flask + OpenCV</span>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left Column: Video Feed -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden border border-gray-700">
+                <div class="bg-gray-700 px-4 py-2 flex justify-between items-center">
+                    <h2 class="font-semibold text-lg"><i class="fas fa-video mr-2"></i> Live Webcam Feed</h2>
+                    <span id="status-indicator" class="flex items-center text-sm text-green-400">
+                        <span class="relative flex h-3 w-3 mr-2">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span>
+                        System Active
+                    </span>
+                </div>
+                <!-- Video Stream Image -->
+                <div class="aspect-video bg-black flex items-center justify-center relative">
+                    <img src="{{ url_for('video_feed') }}" alt="Video Stream" class="w-full h-full object-cover">
+                </div>
+            </div>
+            
+            <!-- Audio Player UI -->
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
+                <h2 class="font-semibold text-lg mb-4"><i class="fas fa-music mr-2"></i> Audio Playback Status</h2>
+                
+                <div class="flex items-center space-x-4 mb-4">
+                    <div class="w-12 h-12 rounded-full bg-indigo-600 flex items-center justify-center text-2xl">
+                        <i class="fas fa-compact-disc animate-spin-slow" id="disc-icon"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-400">Currently Playing</p>
+                        <p id="current-song-text" class="text-lg font-bold text-indigo-300">Nothing (Silence)</p>
+                    </div>
+                </div>
+                
+                <audio id="audio-player" loop class="hidden">
+                    <source id="audio-source" src="" type="audio/mpeg">
+                </audio>
+            </div>
+        </div>
+
+        <!-- Right Column: Metrics & Settings -->
+        <div class="space-y-6">
+            
+            <!-- Real-time Metrics -->
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700">
+                <h2 class="font-semibold text-lg mb-4"><i class="fas fa-chart-pie mr-2"></i> Real-time Detection</h2>
+                
+                <div class="mb-4">
+                    <p class="text-sm text-gray-400">Current Class</p>
+                    <p id="detected-class" class="text-3xl font-bold text-emerald-400 mt-1">background</p>
+                </div>
+                
+                <div>
+                    <p class="text-sm text-gray-400 mb-1">Confidence Score</p>
+                    <div class="w-full bg-gray-700 rounded-full h-4">
+                        <div id="confidence-bar" class="bg-emerald-500 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <p id="confidence-text" class="text-right text-xs mt-1 text-gray-300">0%</p>
+                </div>
+            </div>
+
+            <!-- Audio Mapping Config Removed per User Request -->
+            
+        </div>
+    </main>
+
+    <!-- JavaScript Logic -->
+    <script>
+        const audioPlayer = document.getElementById('audio-player');
+        const audioSource = document.getElementById('audio-source');
+        const discIcon = document.getElementById('disc-icon');
+        
+        let currentPlayingClass = 'background';
+        // Auto-mapped from backend! No UI config needed.
+        const audioMapping = {{ audio_mapping | tojson }};
+
+        function handleAudio(detectedClass) {
+            // Don't restart if already playing the right thing
+            if (detectedClass === currentPlayingClass) return;
+            
+            // Stop current playback
+            audioPlayer.pause();
+            discIcon.classList.remove('animate-spin');
+            
+            // If background or no mapped audio
+            if (detectedClass === 'background' || !audioMapping[detectedClass]) {
+                currentPlayingClass = 'background';
+                document.getElementById('current-song-text').textContent = 'Nothing (Silence)';
+                return;
+            }
+            
+            // Play new audio
+            const songFile = audioMapping[detectedClass];
+            audioPlayer.src = '/static/audio/' + encodeURIComponent(songFile);
+            audioPlayer.play().then(() => {
+                currentPlayingClass = detectedClass;
+                document.getElementById('current-song-text').textContent = songFile;
+                discIcon.classList.add('animate-spin');
+            }).catch(e => {
+                console.error("Audio playback requires user interaction first:", e);
+                document.getElementById('current-song-text').textContent = 'Click anywhere on page to enable audio';
+            });
+        }
+
+        // Initialize user interaction for audio autoplay policy
+        document.body.addEventListener('click', () => {
+            if (audioPlayer.paused && currentPlayingClass !== 'background') {
+                audioPlayer.play();
+                discIcon.classList.add('animate-spin');
+            }
+        }, { once: true });
+
+        // Poll API Status every 500ms
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                // Update UI
+                document.getElementById('detected-class').textContent = data.class;
+                
+                // Color based on class
+                if (data.class === 'background') {
+                    document.getElementById('detected-class').className = 'text-3xl font-bold text-gray-500 mt-1';
+                    document.getElementById('confidence-bar').className = 'bg-gray-500 h-4 rounded-full transition-all duration-300';
+                } else {
+                    document.getElementById('detected-class').className = 'text-3xl font-bold text-emerald-400 mt-1';
+                    document.getElementById('confidence-bar').className = 'bg-emerald-500 h-4 rounded-full transition-all duration-300';
+                }
+                
+                const percent = (data.confidence * 100).toFixed(1);
+                document.getElementById('confidence-bar').style.width = `${percent}%`;
+                document.getElementById('confidence-text').textContent = `${percent}%`;
+
+                // Handle Audio Logic
+                handleAudio(data.class);
+                
+            } catch (err) {
+                console.error("Status polling failed", err);
+            }
+        }, 500);
+    </script>
+    
+    <style>
+        .animate-spin-slow {
+            animation: spin 3s linear infinite;
+        }
+    </style>
+</body>
+</html>

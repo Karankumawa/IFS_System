@@ -1,0 +1,13 @@
+﻿# Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.streamlit/
+audio_mapping.json
+
+# Generated training artifacts. The supplied .keras model is intentionally kept.
+*.h5
+training_history.png
+dataset/
