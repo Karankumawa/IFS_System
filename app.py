@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import tensorflow as tf
-from flask import Flask, render_template, Response, jsonify
+from flask import Flask, render_template, Response, jsonify, request
 import json
 import os
 import threading
@@ -14,11 +14,14 @@ app = Flask(__name__)
 # ==============================================================================
 MODEL_PATH = "festival_model.keras"
 LABELS_PATH = "festival_model.labels.json"
-CONFIDENCE_THRESHOLD = 0.85
+CONFIDENCE_THRESHOLD = 0.95
+
+from collections import deque
 
 # State Variables
 current_class = "background"
 current_confidence = 0.0
+prediction_history = deque(maxlen=6) # Store last 6 predictions
 camera = None
 model = None
 class_names = []
@@ -78,11 +81,24 @@ def run_inference(frame):
         
         # Update State
         if confidence >= CONFIDENCE_THRESHOLD:
-            current_class = class_names[max_idx]
+            predicted_class = class_names[max_idx]
+            if predicted_class.lower() == "background":
+                predicted_class = "background"
         else:
-            current_class = "background"
+            predicted_class = "background"
             
-        current_confidence = confidence
+        prediction_history.append((predicted_class, confidence))
+        
+        # Temporal Smoothing: Determine current class by majority vote
+        classes_in_history = [p[0] for p in prediction_history]
+        most_common_class = max(set(classes_in_history), key=classes_in_history.count)
+        
+        # Only switch if it appears in at least 4 out of 6 frames
+        if classes_in_history.count(most_common_class) >= 4:
+            current_class = most_common_class
+            # Calculate average confidence for the current class
+            confidences = [p[1] for p in prediction_history if p[0] == most_common_class]
+            current_confidence = sum(confidences) / len(confidences) if confidences else confidence
         
         # Overlay Bounding Box / Text on the frame itself
         text = f"{current_class} ({current_confidence*100:.1f}%)"
@@ -156,6 +172,44 @@ def api_status():
         'class': current_class,
         'confidence': current_confidence
     })
+
+@app.route('/api/predict_image', methods=['POST'])
+def predict_image():
+    """Predicts festival from an uploaded image."""
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image uploaded'}), 400
+        
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+        
+    try:
+        # Read image
+        file_bytes = np.frombuffer(file.read(), np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img is None:
+            return jsonify({'error': 'Invalid image format'}), 400
+            
+        # Preprocess
+        resized = cv2.resize(img, (224, 224))
+        rgb_frame = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        input_arr = np.expand_dims(rgb_frame, axis=0)
+        
+        # Predict
+        predictions = model.predict(input_arr, verbose=0)[0]
+        max_idx = int(np.argmax(predictions))
+        confidence = float(predictions[max_idx])
+        
+        predicted_class = class_names[max_idx]
+        if predicted_class.lower() == "background":
+            predicted_class = "background"
+            
+        return jsonify({
+            'class': predicted_class,
+            'confidence': confidence
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     print("Starting Flask Dashboard on http://localhost:5000")

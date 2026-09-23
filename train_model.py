@@ -57,6 +57,23 @@ def create_datasets():
         json.dump(class_names, f)
     print(f"Saved {len(class_names)} class labels to {LABELS_SAVE_PATH}")
 
+    # Calculate Class Weights to handle dataset imbalance (e.g., Diwali 1188 vs Chithirai 325)
+    class_weights = {}
+    total_samples = 0
+    class_counts = []
+    
+    for class_name in class_names:
+        class_path = os.path.join(TRAIN_DIR, class_name)
+        count = len(os.listdir(class_path))
+        class_counts.append(count)
+        total_samples += count
+        
+    print("\n--- Class Weights (Handling Imbalance) ---")
+    for i, count in enumerate(class_counts):
+        class_weights[i] = total_samples / (len(class_names) * count)
+        print(f"Class '{class_names[i]}': {count} images -> Weight: {class_weights[i]:.2f}")
+    print("------------------------------------------\n")
+
     # Apply augmentation to training dataset
     train_dataset = train_dataset.map(lambda x, y: (data_augmentation(x, training=True), y), 
                                       num_parallel_calls=tf.data.AUTOTUNE)
@@ -64,7 +81,7 @@ def create_datasets():
     train_dataset = train_dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
     val_dataset = val_dataset.prefetch(buffer_size=tf.data.AUTOTUNE)
     
-    return train_dataset, val_dataset, class_names
+    return train_dataset, val_dataset, class_names, class_weights
 
 # ==============================================================================
 # MODEL BUILDING (TRANSFER LEARNING)
@@ -128,7 +145,7 @@ def plot_history(history):
     print("Saved training_history.png")
 
 def main():
-    train_dataset, val_dataset, class_names = create_datasets()
+    train_dataset, val_dataset, class_names, class_weights = create_datasets()
     
     model = build_model(len(class_names))
     model.summary()
@@ -138,11 +155,12 @@ def main():
     reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
     checkpoint = ModelCheckpoint(filepath=MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=1)
     
-    print("Starting training...")
+    print("Starting training with Class Weights...")
     history = model.fit(
         train_dataset,
         validation_data=val_dataset,
         epochs=EPOCHS,
+        class_weight=class_weights,
         callbacks=[early_stop, reduce_lr, checkpoint]
     )
     

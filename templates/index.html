@@ -12,8 +12,8 @@
     <!-- Header -->
     <header class="bg-gray-800 border-b border-gray-700 p-4 shadow-md">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-indigo-400"><i class="fas fa-om mr-2"></i> Live Festival Dashboard</h1>
-            <span class="text-sm text-gray-400">TensorFlow + Flask + OpenCV</span>
+            <h1 class="text-2xl font-bold text-indigo-400"> Live Festival Dashboard</h1>
+            
         </div>
     </header>
 
@@ -79,7 +79,29 @@
                 </div>
             </div>
 
-            <!-- Audio Mapping Config Removed per User Request -->
+            <!-- Image Upload Section -->
+            <div class="bg-gray-800 rounded-lg shadow-lg p-6 border border-gray-700 mt-6">
+                <h2 class="font-semibold text-lg mb-4"><i class="fas fa-upload mr-2"></i> Upload Image</h2>
+                <p class="text-xs text-gray-400 mb-4">Upload a static image to detect the festival and play its song.</p>
+                
+                <input type="file" id="image-upload" accept="image/*" class="block w-full text-sm text-gray-300
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-full file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-indigo-600 file:text-white
+                    hover:file:bg-indigo-700
+                    cursor-pointer mb-4
+                "/>
+                <div class="flex space-x-2">
+                    <button id="btn-upload" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded flex-1">
+                        Predict
+                    </button>
+                    <button id="btn-resume-live" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded flex-1 hidden">
+                        Resume Live
+                    </button>
+                </div>
+                <p id="upload-status" class="text-sm mt-3 text-indigo-400"></p>
+            </div>
             
         </div>
     </main>
@@ -89,27 +111,26 @@
         const audioPlayer = document.getElementById('audio-player');
         const audioSource = document.getElementById('audio-source');
         const discIcon = document.getElementById('disc-icon');
+        const statusIndicator = document.getElementById('status-indicator');
         
         let currentPlayingClass = 'background';
+        let isLiveMode = true;
+        
         // Auto-mapped from backend! No UI config needed.
         const audioMapping = {{ audio_mapping | tojson }};
 
         function handleAudio(detectedClass) {
-            // Don't restart if already playing the right thing
             if (detectedClass === currentPlayingClass) return;
             
-            // Stop current playback
             audioPlayer.pause();
             discIcon.classList.remove('animate-spin');
             
-            // If background or no mapped audio
             if (detectedClass === 'background' || !audioMapping[detectedClass]) {
                 currentPlayingClass = 'background';
                 document.getElementById('current-song-text').textContent = 'Nothing (Silence)';
                 return;
             }
             
-            // Play new audio
             const songFile = audioMapping[detectedClass];
             audioPlayer.src = '/static/audio/' + encodeURIComponent(songFile);
             audioPlayer.play().then(() => {
@@ -122,43 +143,91 @@
             });
         }
 
-        // Initialize user interaction for audio autoplay policy
         document.body.addEventListener('click', () => {
             if (audioPlayer.paused && currentPlayingClass !== 'background') {
                 audioPlayer.play();
                 discIcon.classList.add('animate-spin');
             }
         }, { once: true });
+        
+        function updateUI(data) {
+            document.getElementById('detected-class').textContent = data.class;
+            
+            if (data.class === 'background') {
+                document.getElementById('detected-class').className = 'text-3xl font-bold text-gray-500 mt-1';
+                document.getElementById('confidence-bar').className = 'bg-gray-500 h-4 rounded-full transition-all duration-300';
+            } else {
+                document.getElementById('detected-class').className = 'text-3xl font-bold text-emerald-400 mt-1';
+                document.getElementById('confidence-bar').className = 'bg-emerald-500 h-4 rounded-full transition-all duration-300';
+            }
+            
+            const percent = (data.confidence * 100).toFixed(1);
+            document.getElementById('confidence-bar').style.width = `${percent}%`;
+            document.getElementById('confidence-text').textContent = `${percent}%`;
 
-        // Poll API Status every 500ms
+            handleAudio(data.class);
+        }
+
+        // Live Mode Polling
         setInterval(async () => {
+            if (!isLiveMode) return; // Skip polling if user uploaded an image
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                
-                // Update UI
-                document.getElementById('detected-class').textContent = data.class;
-                
-                // Color based on class
-                if (data.class === 'background') {
-                    document.getElementById('detected-class').className = 'text-3xl font-bold text-gray-500 mt-1';
-                    document.getElementById('confidence-bar').className = 'bg-gray-500 h-4 rounded-full transition-all duration-300';
-                } else {
-                    document.getElementById('detected-class').className = 'text-3xl font-bold text-emerald-400 mt-1';
-                    document.getElementById('confidence-bar').className = 'bg-emerald-500 h-4 rounded-full transition-all duration-300';
-                }
-                
-                const percent = (data.confidence * 100).toFixed(1);
-                document.getElementById('confidence-bar').style.width = `${percent}%`;
-                document.getElementById('confidence-text').textContent = `${percent}%`;
-
-                // Handle Audio Logic
-                handleAudio(data.class);
-                
+                updateUI(data);
             } catch (err) {
                 console.error("Status polling failed", err);
             }
         }, 500);
+        
+        // Image Upload Logic
+        document.getElementById('btn-upload').addEventListener('click', async () => {
+            const fileInput = document.getElementById('image-upload');
+            const statusText = document.getElementById('upload-status');
+            
+            if (fileInput.files.length === 0) {
+                statusText.textContent = "Please select an image first.";
+                return;
+            }
+            
+            statusText.textContent = "Analyzing image...";
+            
+            const formData = new FormData();
+            formData.append('image', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('/api/predict_image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    statusText.textContent = "Error: " + data.error;
+                } else {
+                    // Pause Live mode
+                    isLiveMode = false;
+                    statusIndicator.innerHTML = '<span class="text-orange-400">Image Mode (Live Paused)</span>';
+                    document.getElementById('btn-resume-live').classList.remove('hidden');
+                    statusText.textContent = "Prediction complete!";
+                    
+                    // Update UI with uploaded image result
+                    updateUI(data);
+                }
+            } catch (err) {
+                statusText.textContent = "Failed to upload image.";
+            }
+        });
+        
+        document.getElementById('btn-resume-live').addEventListener('click', () => {
+            isLiveMode = true;
+            statusIndicator.innerHTML = `<span class="relative flex h-3 w-3 mr-2">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                        </span> System Active`;
+            document.getElementById('btn-resume-live').classList.add('hidden');
+            document.getElementById('upload-status').textContent = "Resumed Live Webcam.";
+        });
     </script>
     
     <style>
